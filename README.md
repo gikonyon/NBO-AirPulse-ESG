@@ -1,4 +1,4 @@
-# NBO-AirPulse-ESG
+
 # NBO-AirPulse: Nairobi Environmental & ESG Intelligence
 
 ## 🌍 Overview
