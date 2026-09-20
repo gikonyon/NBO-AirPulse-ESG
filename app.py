@@ -3,8 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import pydeck as pdk
-import requests
-from datetime import datetime
 
 # ---------------------------------------------------------
 # PAGE CONFIGURATION
@@ -21,7 +19,7 @@ st.markdown("### *Real-Time Public Sensor Monitoring & PM₂.₅ Analysis*")
 # ---------------------------------------------------------
 # DATA FETCHING & BENCHMARK ENGINE
 # ---------------------------------------------------------
-@st.cache_data(ttl=900)  # Cache stream for 15 minutes
+@st.cache_data(ttl=900)
 def fetch_nairobi_air_quality():
     """
     Fetches and structures public air quality sensor streams in Nairobi.
@@ -48,8 +46,21 @@ def fetch_nairobi_air_quality():
             return "Unhealthy for Sensitive Groups"
         else:
             return "Unhealthy"
-            
+
+    # Pre-assign RGB lists for PyDeck color mapping (Fixes DeckGL syntax error)
+    def assign_color(pm25):
+        if pm25 <= 15.0:
+            return [0, 168, 107, 200]    # Green (Good)
+        elif pm25 <= 35.4:
+            return [255, 191, 0, 200]    # Yellow (Moderate)
+        elif pm25 <= 55.4:
+            return [255, 120, 0, 200]    # Orange (Unhealthy Sensitive)
+        else:
+            return [230, 57, 70, 200]    # Red (Unhealthy)
+
     df["AQI_Category"] = df["PM2.5"].apply(classify_aqi)
+    df["Color_RGB"] = df["PM2.5"].apply(assign_color)
+    
     return df
 
 df_sensors = fetch_nairobi_air_quality()
@@ -95,11 +106,12 @@ with tab1:
         data=filtered_df,
         get_position=["lon", "lat"],
         get_elevation="PM2.5",
-        elevation_scale=100,
-        radius=500,
-        get_fill_color=["PM2.5 * 4", "255 - PM2.5 * 3", "100", "180"],
+        elevation_scale=80,
+        radius=600,
+        get_fill_color="Color_RGB",
         pickable=True,
         auto_highlight=True,
+        extruded=True
     )
     
     view_state = pdk.ViewState(
@@ -140,7 +152,6 @@ with tab3:
     st.subheader("Hourly PM₂.₅ Spikes (Peak Rush Hour Modeling)")
     
     hours = list(range(24))
-    # Simulated diurnal rush hour curve (Spikes at 8 AM and 7 PM)
     baseline_trend = 20 + 25 * np.exp(-((np.array(hours) - 8)**2) / 8) + 30 * np.exp(-((np.array(hours) - 19)**2) / 10)
     
     df_hourly = pd.DataFrame({
@@ -161,4 +172,4 @@ with tab3:
 
 st.markdown("---")
 st.subheader("Filtered Public Sensor Dataset")
-st.dataframe(filtered_df, use_container_width=True)
+st.dataframe(filtered_df[["Sensor_ID", "Zone", "PM2.5", "PM10", "AQI_Category"]], use_container_width=True)
