@@ -26,16 +26,19 @@ def fetch_nairobi_air_quality():
     Integrates sub-county coordinates for geospatial density modeling.
     """
     locations = [
-        {"Sensor_ID": "NRB_001", "Zone": "Nairobi CBD", "lat": -1.286389, "lon": 36.817223, "PM2.5": 38.5, "PM10": 62.1},
-        {"Sensor_ID": "NRB_002", "Zone": "Industrial Area", "lat": -1.310000, "lon": 36.850000, "PM2.5": 58.2, "PM10": 94.0},
-        {"Sensor_ID": "NRB_003", "Zone": "Westlands", "lat": -1.266667, "lon": 36.800000, "PM2.5": 18.4, "PM10": 31.0},
-        {"Sensor_ID": "NRB_004", "Zone": "Kasarani / Thika Rd", "lat": -1.220000, "lon": 36.890000, "PM2.5": 42.1, "PM10": 70.5},
-        {"Sensor_ID": "NRB_005", "Zone": "Kibera", "lat": -1.313333, "lon": 36.783333, "PM2.5": 49.0, "PM10": 81.2},
-        {"Sensor_ID": "NRB_006", "Zone": "Eastleigh", "lat": -1.275000, "lon": 36.850000, "PM2.5": 44.8, "PM10": 75.3},
-        {"Sensor_ID": "NRB_007", "Zone": "Karen", "lat": -1.320000, "lon": 36.700000, "PM2.5": 12.1, "PM10": 22.4},
+        {"Sensor_ID": "NRB_001", "Zone": "Nairobi CBD", "lat": -1.286389, "lon": 36.817223, "PM2_5": 38.5, "PM10": 62.1},
+        {"Sensor_ID": "NRB_002", "Zone": "Industrial Area", "lat": -1.310000, "lon": 36.850000, "PM2_5": 58.2, "PM10": 94.0},
+        {"Sensor_ID": "NRB_003", "Zone": "Westlands", "lat": -1.266667, "lon": 36.800000, "PM2_5": 18.4, "PM10": 31.0},
+        {"Sensor_ID": "NRB_004", "Zone": "Kasarani / Thika Rd", "lat": -1.220000, "lon": 36.890000, "PM2_5": 42.1, "PM10": 70.5},
+        {"Sensor_ID": "NRB_005", "Zone": "Kibera", "lat": -1.313333, "lon": 36.783333, "PM2_5": 49.0, "PM10": 81.2},
+        {"Sensor_ID": "NRB_006", "Zone": "Eastleigh", "lat": -1.275000, "lon": 36.850000, "PM2_5": 44.8, "PM10": 75.3},
+        {"Sensor_ID": "NRB_007", "Zone": "Karen", "lat": -1.320000, "lon": 36.700000, "PM2_5": 12.1, "PM10": 22.4},
     ]
     df = pd.DataFrame(locations)
     
+    # Pre-calculate elevation to bypass DeckGL string math evaluation
+    df["elevation"] = df["PM2_5"] * 80
+
     # Calculate WHO Compliance & AQI Category
     def classify_aqi(pm25):
         if pm25 <= 12.0:
@@ -47,19 +50,19 @@ def fetch_nairobi_air_quality():
         else:
             return "Unhealthy"
 
-    # Pre-assign RGB lists for PyDeck color mapping (Fixes DeckGL syntax error)
-    def assign_color(pm25):
+    # Map individual numerical RGB channels for DeckGL parser compatibility
+    def get_rgb(pm25):
         if pm25 <= 15.0:
-            return [0, 168, 107, 200]    # Green (Good)
+            return 0, 168, 107      # Green
         elif pm25 <= 35.4:
-            return [255, 191, 0, 200]    # Yellow (Moderate)
+            return 255, 191, 0     # Yellow
         elif pm25 <= 55.4:
-            return [255, 120, 0, 200]    # Orange (Unhealthy Sensitive)
+            return 255, 120, 0     # Orange
         else:
-            return [230, 57, 70, 200]    # Red (Unhealthy)
+            return 230, 57, 70      # Red
 
-    df["AQI_Category"] = df["PM2.5"].apply(classify_aqi)
-    df["Color_RGB"] = df["PM2.5"].apply(assign_color)
+    df["AQI_Category"] = df["PM2_5"].apply(classify_aqi)
+    df[["r", "g", "b"]] = df["PM2_5"].apply(lambda x: pd.Series(get_rgb(x)))
     
     return df
 
@@ -73,15 +76,15 @@ selected_zone = st.sidebar.selectbox("Select Sub-County / Zone", ["All Zones"] +
 show_who_threshold = st.sidebar.checkbox("Highlight WHO 24-hr Safety Limit (15 µg/m³)", value=True)
 
 if selected_zone != "All Zones":
-    filtered_df = df_sensors[df_sensors["Zone"] == selected_zone]
+    filtered_df = df_sensors[df_sensors["Zone"] == selected_zone].copy()
 else:
-    filtered_df = df_sensors
+    filtered_df = df_sensors.copy()
 
 # ---------------------------------------------------------
 # KPI METRICS SUMMARY
 # ---------------------------------------------------------
-avg_pm25 = filtered_df["PM2.5"].mean()
-max_pm25_zone = filtered_df.loc[filtered_df["PM2.5"].idxmax()]["Zone"]
+avg_pm25 = filtered_df["PM2_5"].mean()
+max_pm25_zone = filtered_df.loc[filtered_df["PM2_5"].idxmax()]["Zone"]
 total_sensors = len(filtered_df)
 
 col1, col2, col3, col4 = st.columns(4)
@@ -105,10 +108,9 @@ with tab1:
         "ColumnLayer",
         data=filtered_df,
         get_position=["lon", "lat"],
-        get_elevation="PM2.5",
-        elevation_scale=80,
+        get_elevation="elevation",
         radius=600,
-        get_fill_color="Color_RGB",
+        get_fill_color="[r, g, b, 200]",
         pickable=True,
         auto_highlight=True,
         extruded=True
@@ -124,7 +126,7 @@ with tab1:
     r = pdk.Deck(
         layers=[layer],
         initial_view_state=view_state,
-        tooltip={"text": "{Zone}\nPM2.5: {PM2.5} µg/m³\nCategory: {AQI_Category}"}
+        tooltip={"text": "{Zone}\nPM2.5: {PM2_5} µg/m³\nCategory: {AQI_Category}"}
     )
     st.pydeck_chart(r)
 
@@ -135,11 +137,11 @@ with tab2:
     fig_bar = px.bar(
         filtered_df,
         x="Zone",
-        y=["PM2.5", "PM10"],
+        y=["PM2_5", "PM10"],
         barmode="group",
         title="Particulate Matter Comparison across Nairobi Sub-Counties",
         labels={"value": "Concentration (µg/m³)", "variable": "Pollutant Type"},
-        color_discrete_map={"PM2.5": "#FF4B4B", "PM10": "#0083B0"}
+        color_discrete_map={"PM2_5": "#FF4B4B", "PM10": "#0083B0"}
     )
     
     if show_who_threshold:
@@ -156,15 +158,15 @@ with tab3:
     
     df_hourly = pd.DataFrame({
         "Hour_of_Day": hours,
-        "Simulated_PM2.5": baseline_trend
+        "Simulated_PM2_5": baseline_trend
     })
     
     fig_line = px.line(
         df_hourly,
         x="Hour_of_Day",
-        y="Simulated_PM2.5",
+        y="Simulated_PM2_5",
         title="Estimated 24-Hour PM₂.₅ Cycle in Central Nairobi",
-        labels={"Hour_of_Day": "Hour of Day (24h)", "Simulated_PM2.5": "PM₂.₅ (µg/m³)"},
+        labels={"Hour_of_Day": "Hour of Day (24h)", "Simulated_PM2_5": "PM₂.₅ (µg/m³)"},
         markers=True
     )
     fig_line.add_hline(y=15.0, line_dash="dash", line_color="green", annotation_text="WHO Safety Target")
@@ -172,4 +174,4 @@ with tab3:
 
 st.markdown("---")
 st.subheader("Filtered Public Sensor Dataset")
-st.dataframe(filtered_df[["Sensor_ID", "Zone", "PM2.5", "PM10", "AQI_Category"]], use_container_width=True)
+st.dataframe(filtered_df[["Sensor_ID", "Zone", "PM2_5", "PM10", "AQI_Category"]], use_container_width=True)
